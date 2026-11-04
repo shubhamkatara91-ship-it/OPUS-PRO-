@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import os
 import time
 import sqlite3
+import json
 from fastapi import FastAPI, HTTPException, Header
 import hmac
 from fastapi.responses import HTMLResponse
@@ -49,6 +50,20 @@ def db():
             conn.execute(statement)
     conn.execute("UPDATE results SET observed_at = created_at WHERE observed_at IS NULL")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_results_event_id ON results(event_id) WHERE event_id IS NOT NULL")
+    conn.execute("""CREATE TABLE IF NOT EXISTS provider_observations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cycle_type TEXT NOT NULL CHECK(cycle_type IN ('30s','1m')),
+        period TEXT NOT NULL,
+        raw_result_json TEXT,
+        explicit_outcome TEXT CHECK(explicit_outcome IS NULL OR explicit_outcome IN ('BIG','SMALL')),
+        observed_at TEXT,
+        payload_hash TEXT,
+        payload_json TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        UNIQUE(cycle_type, event_id)
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_provider_observations_cycle_id ON provider_observations(cycle_type, id)")
     return conn
 
 class ResultIn(BaseModel):
@@ -247,34 +262,62 @@ def status():
     return {"server": "online", "provider": "not_configured", "live_data": False,
             "message": "No verified provider API is connected. Only user-entered historical results are analyzed."}
 
-def _persist_provider_history(records: list[dict], cycle_type: str) -> int:
-    """Store only provider rows with an explicit BIG/SMALL value; ignore repeats."""
+def _persist_provider_history(records: list[dict], cycle_type: str) -> dict:
+    """Persist every raw provider row; classify only explicit BIG/SMALL values."""
     conn = db()
-    inserted = 0
+    raw_inserted = 0
+    classified_inserted = 0
+    fetched_at = datetime.now(timezone.utc).isoformat()
     try:
         for row in records:
+            period_value = row.get("period")
+            if period_value is None:
+                continue
+            period = str(period_value)
+            event_id = f"wingo-{cycle_type}-{period}"
+            payload_json = row.get("raw")
+            if not isinstance(payload_json, str) or not payload_json:
+                payload_json = json.dumps(row, sort_keys=True, separators=(",", ":"), default=str)
+            raw_result_json = (
+                json.dumps(row.get("raw_result"), sort_keys=True, separators=(",", ":"), default=str)
+                if row.get("raw_result") is not None else None
+            )
+            observed_at = row.get("observed_at")
+            observed_at = str(observed_at) if observed_at is not None else None
+            cursor = conn.execute(
+                """INSERT OR IGNORE INTO provider_observations
+                   (cycle_type,period,raw_result_json,explicit_outcome,observed_at,payload_hash,
+                    payload_json,fetched_at,event_id)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                (cycle_type, period, raw_result_json, row.get("outcome"), observed_at,
+                 row.get("payload_hash"), payload_json, fetched_at, event_id)
+            )
+            raw_inserted += max(cursor.rowcount, 0)
+
+            # Retain unclassified numeric outcomes as raw observations. Only
+            # explicit BIG/SMALL values enter the analytical result table.
             if row.get("outcome") not in ("BIG", "SMALL"):
                 continue
-            period = str(row["period"])
-            event_id = f"wingo-{cycle_type}-{period}"
-            observed_at = row.get("observed_at")
-            if not isinstance(observed_at, str) or not observed_at:
-                observed_at = datetime.now(timezone.utc).isoformat()
+            result_observed_at = observed_at or fetched_at
             try:
                 conn.execute(
                     """INSERT INTO results(period,outcome,created_at,source,event_id,observed_at,payload_hash)
                        VALUES(?,?,?,?,?,?,?)""",
-                    (period, row["outcome"], datetime.now(timezone.utc).isoformat(),
-                     f"provider:wingo:{cycle_type}", event_id, observed_at, row.get("payload_hash"))
+                    (period, row["outcome"], fetched_at,
+                     f"provider:wingo:{cycle_type}", event_id, result_observed_at,
+                     row.get("payload_hash"))
                 )
-                inserted += 1
+                classified_inserted += 1
             except sqlite3.IntegrityError:
                 # Same provider event already stored; do not create duplicates.
                 continue
         conn.commit()
     finally:
         conn.close()
-    return inserted
+    return {
+        "raw_observations_saved": raw_inserted,
+        "classified_results_saved": classified_inserted,
+    }
 
 
 @app.get("/api/live/status")
@@ -305,8 +348,34 @@ async def live_snapshot(cycle_seconds: int = 60, limit: int = 50):
     inserted = _persist_provider_history(snapshot["history"], snapshot["cycle_type"])
     snapshot["connected"] = True
     snapshot["status"] = "connected"
-    snapshot["new_records_saved"] = inserted
+    snapshot["raw_records_saved"] = inserted["raw_observations_saved"]
+    snapshot["new_records_saved"] = inserted["classified_results_saved"]
     return snapshot
+
+
+@app.get("/api/live/history")
+def live_history(cycle_seconds: int = 60, limit: int = 500):
+    """Return retained raw provider observations without guessing missing outcomes."""
+    if cycle_seconds not in (30, 60):
+        raise HTTPException(422, "cycle_seconds must be 30 or 60")
+    cycle_type = "30s" if cycle_seconds == 30 else "1m"
+    conn = db()
+    try:
+        rows = conn.execute(
+            """SELECT period,raw_result_json,explicit_outcome,observed_at,payload_hash,
+                      payload_json,fetched_at
+               FROM provider_observations WHERE cycle_type=?
+               ORDER BY id DESC LIMIT ?""",
+            (cycle_type, max(1, min(limit, 500)))
+        ).fetchall()
+    finally:
+        conn.close()
+    return {"cycle_type": cycle_type, "items": [
+        {"period": row[0], "raw_result": json.loads(row[1]) if row[1] else None,
+         "outcome": row[2], "observed_at": row[3], "payload_hash": row[4],
+         "raw": row[5], "fetched_at": row[6]}
+        for row in rows
+    ]}
 
 
 @app.get("/api/tools")
