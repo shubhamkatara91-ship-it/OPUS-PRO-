@@ -25,6 +25,37 @@ class OpusStorageTests(unittest.TestCase):
         self.assertTrue(second["duplicate"])
         self.assertEqual(first["id"], second["id"])
 
+    def test_provider_retains_raw_numeric_rows_without_guessing_size(self):
+        records = [
+            {"period": "p2", "outcome": None, "raw_result": 2, "payload_hash": "hash-p2"},
+            {"period": "p1", "outcome": "BIG", "raw_result": 8, "payload_hash": "hash-p1"},
+        ]
+        first = main._persist_provider_history(records, "1m")
+        second = main._persist_provider_history(records, "1m")
+        self.assertEqual(first, {
+            "raw_observations_saved": 2,
+            "classified_results_saved": 1,
+        })
+        self.assertEqual(second, {
+            "raw_observations_saved": 0,
+            "classified_results_saved": 0,
+        })
+        conn = main.db()
+        try:
+            raw_count = conn.execute(
+                "SELECT COUNT(*) FROM provider_observations WHERE cycle_type='1m'"
+            ).fetchone()[0]
+            unclassified = conn.execute(
+                "SELECT explicit_outcome,raw_result_json FROM provider_observations WHERE period='p2'"
+            ).fetchone()
+            analysis_count = conn.execute("SELECT COUNT(*) FROM results").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(raw_count, 2)
+        self.assertIsNone(unclassified[0])
+        self.assertEqual(unclassified[1], "2")
+        self.assertEqual(analysis_count, 1)
+
     def test_cycle_lengths(self):
         for seconds in (30, 60):
             result = main.current_cycle(seconds)
