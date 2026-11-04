@@ -94,8 +94,9 @@ function showPage(page){
 }
 function renderTools(){
  var html="";
- profiles.forEach(function(p){html+='<button class="tool" onclick="runTool(\\''+p[0]+'\\')"><b>'+p[1]+'</b><small>Last '+p[2]+' results</small></button>';});
+ profiles.forEach(function(p){html+='<button class="tool" data-tool="'+p[0]+'"><b>'+p[1]+'</b><small>Last '+p[2]+' results</small></button>';});
  document.getElementById("toolGrid").innerHTML=html;
+ document.querySelectorAll(".tool").forEach(function(button){button.addEventListener("click",function(){runTool(button.getAttribute("data-tool"));});});
 }
 async function runTool(id){
  var box=document.getElementById("result");box.classList.remove("hidden");box.textContent="Loading historical analysis…";
