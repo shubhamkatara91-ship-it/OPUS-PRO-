@@ -9,6 +9,7 @@ Independent historical-analytics application. The project does not reuse Mark Pr
 - Original statistical engine: observed frequency, recency-weighted frequency, transition counts with Laplace smoothing, streaks, entropy, and per-tool expanding-window walk-forward baseline results
 - Historical result ingestion with source, event ID, observed timestamp, and payload-hash provenance
 - Separate de-duplicated archive of raw provider observations, including numeric draws that are not yet mapped to BIG/SMALL
+- Chronological ingestion gate: raw records are retained immediately, but BIG/SMALL analysis ingestion stays paused until the provider's oldest-first/newest-first response order is verified
 - Optional server-side ingestion token (`OPUS_INGEST_TOKEN` / `X-OPUS-INGEST-TOKEN`) and duplicate event protection
 - Result entry and history endpoints
 - Selectable 30-second and 60-second UTC-aligned cycle timer endpoint
