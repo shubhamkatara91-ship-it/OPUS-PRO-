@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 import os
 import time
 import sqlite3
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
+import hmac
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from signal_engine import analyze as analyze_history
@@ -187,17 +188,15 @@ def run_tool(tool_id: str):
     return {"id": profile["id"], "name": profile["name"], "window": profile["window"], "analysis": result}
 
 @app.post("/api/history")
-def add_result(item: ResultIn):
+def add_result(item: ResultIn, ingest_token: str | None = Header(default=None, alias="X-OPUS-INGEST-TOKEN")):
     outcome = item.outcome.strip().upper()
     if outcome not in ("BIG", "SMALL"):
         raise HTTPException(400, "outcome must be BIG or SMALL")
-    # Optional ingestion authentication: set OPUS_INGEST_TOKEN in production.
-    # If configured, write requests must carry the matching X-OPUS-INGEST-TOKEN.
+    # Configure OPUS_INGEST_TOKEN on the server before exposing write access.
+    # The token is never shipped to the browser or Android client.
     expected_token = os.getenv("OPUS_INGEST_TOKEN")
-    if expected_token:
-        from fastapi import Header
-        # Header extraction is performed by the dedicated authenticated route below.
-        raise HTTPException(503, "Ingestion authentication is enabled; use /api/history/ingest.")
+    if expected_token and not hmac.compare_digest(ingest_token or "", expected_token):
+        raise HTTPException(401, "A valid X-OPUS-INGEST-TOKEN is required.")
     created_at = datetime.now(timezone.utc).isoformat()
     observed_at = item.observed_at.astimezone(timezone.utc).isoformat() if item.observed_at else created_at
     conn = db()
@@ -209,14 +208,25 @@ def add_result(item: ResultIn):
             if existing:
                 return {"saved": False, "duplicate": True, "id": existing[0],
                         "period": existing[1], "outcome": existing[2]}
-        cursor = conn.execute(
-            """INSERT INTO results(period,outcome,created_at,source,event_id,observed_at,payload_hash)
-               VALUES(?,?,?,?,?,?,?)""",
-            (item.period.strip(), outcome, created_at, item.source.strip(),
-             item.event_id, observed_at, item.payload_hash)
-        )
-        conn.commit()
-        record_id = cursor.lastrowid
+        try:
+            cursor = conn.execute(
+                """INSERT INTO results(period,outcome,created_at,source,event_id,observed_at,payload_hash)
+                   VALUES(?,?,?,?,?,?,?)""",
+                (item.period.strip(), outcome, created_at, item.source.strip(),
+                 item.event_id, observed_at, item.payload_hash)
+            )
+            conn.commit()
+            record_id = cursor.lastrowid
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            if item.event_id:
+                existing = conn.execute(
+                    "SELECT id,period,outcome FROM results WHERE event_id=?", (item.event_id,)
+                ).fetchone()
+                if existing:
+                    return {"saved": False, "duplicate": True, "id": existing[0],
+                            "period": existing[1], "outcome": existing[2]}
+            raise HTTPException(409, "The historical result conflicts with an existing record.")
     finally:
         conn.close()
     return {"saved": True, "id": record_id, "period": item.period.strip(),
@@ -225,8 +235,22 @@ def add_result(item: ResultIn):
 
 @app.get("/api/history")
 def history(limit: int = 100):
-    rows = read_outcomes(max(1, min(limit, 500)))
-    return {"items": [{"period":r[0],"outcome":r[1],"created_at":r[2]} for r in reversed(rows)]}
+    conn = db()
+    try:
+        rows = conn.execute(
+            """SELECT period,outcome,created_at,source,event_id,observed_at,payload_hash
+               FROM (SELECT id,period,outcome,created_at,source,event_id,observed_at,payload_hash
+                     FROM results ORDER BY id DESC LIMIT ?)
+               ORDER BY id ASC""",
+            (max(1, min(limit, 500)),)
+        ).fetchall()
+    finally:
+        conn.close()
+    return {"items": [
+        {"period":r[0], "outcome":r[1], "created_at":r[2], "source":r[3],
+         "event_id":r[4], "observed_at":r[5], "payload_hash":r[6]}
+        for r in reversed(rows)
+    ]}
 
 @app.get("/api/analysis")
 def analysis():
