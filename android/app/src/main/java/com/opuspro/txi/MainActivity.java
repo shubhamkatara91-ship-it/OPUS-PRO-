@@ -25,7 +25,6 @@ public class MainActivity extends Activity {
     private static final String PREFS = "opus_pro_settings";
     private static final String KEY_URL = "backend_url";
     private static final String DEFAULT_URL = "https://opus-pro-api.onrender.com";
-    private static final String DEFAULT_URL = "https://opus-pro-api.onrender.com";
     private static final int BG = Color.rgb(16, 27, 36);
     private WebView webView;
     private ProgressBar progress;
