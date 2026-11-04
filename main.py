@@ -191,8 +191,34 @@ async function syncCycle(){
   paintCycle();
  }catch(e){document.getElementById("cycleNote").textContent=e.message;}
 }
+async function refreshLiveData(){
+ var cycle=document.getElementById("cycleLength").value;
+ var status=document.getElementById("liveConnection"),issue=document.getElementById("liveIssue");
+ var countdown=document.getElementById("liveCountdown"),last=document.getElementById("liveLastResult");
+ var list=document.getElementById("liveHistory"),note=document.getElementById("liveNote");
+ try{
+  var r=await fetch("/api/live/snapshot?cycle_seconds="+cycle+"&limit=20"),d=await r.json();
+  if(d.status==="not_configured"){status.textContent="Not configured";issue.textContent="—";countdown.textContent="—";last.textContent="—";list.textContent="No live provider data available.";note.textContent=d.message;return;}
+  if(!d.connected){status.textContent="Connection error";issue.textContent="—";countdown.textContent="—";last.textContent="—";list.textContent="Live history unavailable.";note.textContent=d.message;return;}
+  status.textContent="Connected · "+d.provider_host;
+  issue.textContent=d.active_issue||"—";
+  countdown.textContent=(d.countdown_seconds===null||d.countdown_seconds===undefined)?"Not supplied":String(d.countdown_seconds)+" sec";
+  var recent=d.last_completed;
+  last.textContent=recent?(recent.period+" · "+(recent.outcome||"Outcome not supplied")+" · "+(recent.raw_result===null?"":recent.raw_result)):"No completed result";
+  list.replaceChildren();
+  if(!d.history.length){list.textContent="Provider connected; no history records returned."; }
+  else d.history.slice(0,8).forEach(function(item){
+   var row=document.createElement("div");row.className="metric";
+   var left=document.createElement("span");left.textContent=item.period;
+   var right=document.createElement("b");right.textContent=(item.outcome||"SIZE NOT PROVIDED")+(item.raw_result===null?"":" · "+item.raw_result);
+   row.appendChild(left);row.appendChild(right);list.appendChild(row);
+  });
+  note.textContent="Fetched "+d.fetched_at+" · New records saved: "+d.new_records_saved+". "+d.source_note;
+ }catch(e){status.textContent="Connection error";note.textContent=e.message;}
+}
 async function checkServer(){try{var r=await fetch("/health"),d=await r.json();document.getElementById("serverStatus").textContent=d.ok?"Online":"Unavailable";}catch(e){document.getElementById("serverStatus").textContent="Unavailable";}}
-renderTools();checkServer();syncCycle();
+renderTools();checkServer();syncCycle();refreshLiveData();
+setInterval(refreshLiveData,10000);
 cycleTick=setInterval(function(){if(cycleRemaining>0)cycleRemaining--;paintCycle();if(cycleRemaining===0)syncCycle();},1000);
 cycleSyncTimer=setInterval(syncCycle,10000);
 </script></body></html>"""
