@@ -1,7 +1,8 @@
-"""Eight isolated OPUS tool module definitions.
+"""Eight independent OPUS PRO tool profiles.
 
-Names and domain logic remain configurable until the authorized requirements
-for each tool are confirmed. This avoids inventing Mark Pro internals.
+These profile IDs and lookback sizes reflect the agreed OPUS interface plan.
+They are configuration profiles, not claims about Mark Pro's proprietary
+algorithms. Each profile can be wired to independently evaluated analytics.
 """
 from dataclasses import dataclass
 
@@ -10,17 +11,30 @@ from dataclasses import dataclass
 class ToolModule:
     key: str
     title: str
+    lookback_records: int
     description: str
-    enabled: bool = False
+    enabled: bool = True
 
+
+_PROFILE_CONFIG = (
+    ("opus-1.1", "OPUS 1.1", 20),
+    ("opus-1.0", "OPUS 1.0", 30),
+    ("opus-1.2", "OPUS 1.2", 50),
+    ("opus-1.4", "OPUS 1.4", 75),
+    ("opus-1.8", "OPUS 1.8", 100),
+    ("opus-1.6", "OPUS 1.6", 150),
+    ("opus-2.0", "OPUS 2.0", 200),
+    ("opus-2.2", "OPUS 2.2", 500),
+)
 
 TOOL_MODULES = tuple(
     ToolModule(
-        key=f"tool-{index:02d}",
-        title=f"OPUS Tool {index}",
-        description="Module placeholder; configure only from verified requirements.",
+        key=key,
+        title=title,
+        lookback_records=lookback,
+        description=f"Independent analytics profile using up to {lookback} verified historical observations.",
     )
-    for index in range(1, 9)
+    for key, title, lookback in _PROFILE_CONFIG
 )
 
 
@@ -29,6 +43,7 @@ def list_modules() -> list[dict[str, object]]:
         {
             "key": module.key,
             "title": module.title,
+            "lookback_records": module.lookback_records,
             "description": module.description,
             "enabled": module.enabled,
         }
