@@ -30,7 +30,7 @@ class OpusStorageTests(unittest.TestCase):
             {"period": "p2", "outcome": None, "raw_result": 2, "payload_hash": "hash-p2"},
             {"period": "p1", "outcome": "BIG", "raw_result": 8, "payload_hash": "hash-p1"},
         ]
-        first = main._persist_provider_history(records, "1m")
+        first = main._persist_provider_history(records, "1m", history_order="oldest_first")
         second = main._persist_provider_history(records, "1m")
         self.assertEqual(first, {
             "raw_observations_saved": 2,
@@ -67,6 +67,36 @@ class OpusStorageTests(unittest.TestCase):
         self.assertEqual(result["backtest"]["method"], "expanding_window_majority_baseline")
         self.assertEqual(result["backtest"]["evaluated"], 5)
         self.assertEqual(result["backtest"]["accuracy_pct"], 100.0)
+
+    def test_unknown_provider_history_order_archives_but_does_not_ingest(self):
+        records = [
+            {"period": "p2", "outcome": "SMALL", "raw_result": 2},
+            {"period": "p1", "outcome": "BIG", "raw_result": 8},
+        ]
+        result = main._persist_provider_history(records, "1m", history_order="unknown")
+        self.assertEqual(result["raw_observations_saved"], 2)
+        self.assertEqual(result["classified_results_saved"], 0)
+        self.assertFalse(result["analysis_ingest_enabled"])
+        conn = main.db()
+        try:
+            raw_count = conn.execute("SELECT COUNT(*) FROM provider_observations").fetchone()[0]
+            result_count = conn.execute("SELECT COUNT(*) FROM results").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(raw_count, 2)
+        self.assertEqual(result_count, 0)
+
+    def test_newest_first_provider_history_is_saved_oldest_first_for_analysis(self):
+        records = [
+            {"period": "p3", "outcome": "BIG"},
+            {"period": "p2", "outcome": "SMALL"},
+            {"period": "p1", "outcome": "BIG"},
+        ]
+        result = main._persist_provider_history(records, "1m", history_order="newest_first")
+        self.assertEqual(result["classified_results_saved"], 3)
+        rows = main.read_outcomes(10)
+        self.assertEqual([row[0] for row in rows], ["p1", "p2", "p3"])
+        self.assertEqual([row[1] for row in rows], ["BIG", "SMALL", "BIG"])
 
     def test_cycle_lengths(self):
         for seconds in (30, 60):
