@@ -113,6 +113,22 @@ class OpusStorageTests(unittest.TestCase):
         self.assertEqual([row[0] for row in rows], ["p1", "p2", "p3"])
         self.assertEqual([row[1] for row in rows], ["BIG", "SMALL", "BIG"])
 
+    def test_live_history_endpoint_reads_archived_raw_rows(self):
+        main._persist_provider_history([
+            {"period": "period-30", "outcome": None, "raw_result": 6},
+        ], "30s", history_order="unknown")
+        response = main.live_history(cycle_seconds=30, limit=10)
+        self.assertEqual(response["cycle_type"], "30s")
+        self.assertEqual(len(response["items"]), 1)
+        self.assertEqual(response["items"][0]["period"], "period-30")
+        self.assertIsNone(response["items"][0]["outcome"])
+        self.assertEqual(response["items"][0]["raw_result"], 6)
+
+    def test_live_history_rejects_unsupported_cycle(self):
+        with self.assertRaises(HTTPException) as error:
+            main.live_history(cycle_seconds=45, limit=10)
+        self.assertEqual(error.exception.status_code, 422)
+
     def test_cycle_lengths(self):
         for seconds in (30, 60):
             result = main.current_cycle(seconds)
