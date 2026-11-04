@@ -7,6 +7,7 @@ import hmac
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from signal_engine import analyze as analyze_history
+from live_provider import fetch_live_snapshot, ProviderNotConfigured, ProviderError
 
 APP_NAME = "OPUS PRO"
 DB_PATH = os.getenv("OPUS_DB_PATH", "/tmp/opus_history.sqlite3")
@@ -97,7 +98,8 @@ nav button.active{color:var(--accent)}.hidden{display:none!important}
 <header>OPUS <span>PRO</span></header><main class="page">
 <section id="homePage"><h1>Home</h1><p class="muted">OPUS PRO research workspace.</p>
 <div class="status">Service status: <strong id="serverStatus">Connecting…</strong>
-<p class="muted">Historical analysis only. Live provider data is not connected.</p></div>
+<p class="muted">Provider connection status is shown below. No sample or fabricated live results are displayed.</p></div>
+<div class="panel"><h3>Live provider feed</h3><div class="metric"><span>Connection</span><b id="liveConnection">Checking…</b></div><div class="metric"><span>Active period</span><b id="liveIssue">—</b></div><div class="metric"><span>Provider countdown</span><b id="liveCountdown">—</b></div><div class="metric"><span>Last completed result</span><b id="liveLastResult">—</b></div><div id="liveHistory" class="muted">Waiting for provider connection…</div><p class="warning" id="liveNote">Live feed requires a verified provider HTTPS endpoint and any required credentials to be configured on the server.</p></div>
 <div class="panel"><h3>Cycle synchronizer</h3>
 <p class="muted">Choose the cycle length. This is a UTC-aligned timer, not a live result feed.</p>
 <div class="row"><select id="cycleLength" onchange="syncCycle()"><option value="60">1 minute</option><option value="30">30 seconds</option></select>
@@ -218,6 +220,68 @@ def health():
 def status():
     return {"server": "online", "provider": "not_configured", "live_data": False,
             "message": "No verified provider API is connected. Only user-entered historical results are analyzed."}
+
+def _persist_provider_history(records: list[dict], cycle_type: str) -> int:
+    """Store only provider rows with an explicit BIG/SMALL value; ignore repeats."""
+    conn = db()
+    inserted = 0
+    try:
+        for row in records:
+            if row.get("outcome") not in ("BIG", "SMALL"):
+                continue
+            period = str(row["period"])
+            event_id = f"wingo-{cycle_type}-{period}"
+            observed_at = row.get("observed_at")
+            if not isinstance(observed_at, str) or not observed_at:
+                observed_at = datetime.now(timezone.utc).isoformat()
+            try:
+                conn.execute(
+                    """INSERT INTO results(period,outcome,created_at,source,event_id,observed_at,payload_hash)
+                       VALUES(?,?,?,?,?,?,?)""",
+                    (period, row["outcome"], datetime.now(timezone.utc).isoformat(),
+                     f"provider:wingo:{cycle_type}", event_id, observed_at, row.get("payload_hash"))
+                )
+                inserted += 1
+            except sqlite3.IntegrityError:
+                # Same provider event already stored; do not create duplicates.
+                continue
+        conn.commit()
+    finally:
+        conn.close()
+    return inserted
+
+
+@app.get("/api/live/status")
+def live_status():
+    configured = bool(os.getenv("PROVIDER_API_URL", "").strip())
+    return {
+        "configured": configured,
+        "status": "configured_not_yet_verified" if configured else "not_configured",
+        "provider_host": (os.getenv("PROVIDER_API_URL", "").strip().split("://")[-1].split("/")[0]
+                          if configured else None),
+        "message": ("Provider URL is configured; test a live fetch to verify access."
+                    if configured else "Set PROVIDER_API_URL after confirming the provider's official endpoint and access rights.")
+    }
+
+
+@app.get("/api/live/snapshot")
+async def live_snapshot(cycle_seconds: int = 60, limit: int = 50):
+    if cycle_seconds not in (30, 60):
+        raise HTTPException(422, "cycle_seconds must be 30 or 60")
+    try:
+        snapshot = await fetch_live_snapshot(cycle_seconds, limit)
+    except ProviderNotConfigured as exc:
+        return {"connected": False, "status": "not_configured", "message": str(exc),
+                "cycle_seconds": cycle_seconds, "history": []}
+    except ProviderError as exc:
+        return {"connected": False, "status": "provider_error", "message": str(exc),
+                "cycle_seconds": cycle_seconds, "history": []}
+    inserted = _persist_provider_history(snapshot["history"], snapshot["cycle_type"])
+    snapshot["connected"] = True
+    snapshot["status"] = "connected"
+    snapshot["new_records_saved"] = inserted
+    return snapshot
+
 
 @app.get("/api/tools")
 def list_tools():
