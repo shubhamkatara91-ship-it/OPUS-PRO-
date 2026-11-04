@@ -32,14 +32,12 @@ class OpusStorageTests(unittest.TestCase):
         ]
         first = main._persist_provider_history(records, "1m", history_order="oldest_first")
         second = main._persist_provider_history(records, "1m")
-        self.assertEqual(first, {
-            "raw_observations_saved": 2,
-            "classified_results_saved": 1,
-        })
-        self.assertEqual(second, {
-            "raw_observations_saved": 0,
-            "classified_results_saved": 0,
-        })
+        self.assertEqual(first["raw_observations_saved"], 2)
+        self.assertEqual(first["classified_results_saved"], 1)
+        self.assertTrue(first["analysis_ingest_enabled"])
+        self.assertEqual(first["history_order"], "oldest_first")
+        self.assertEqual(second["raw_observations_saved"], 0)
+        self.assertEqual(second["classified_results_saved"], 0)
         conn = main.db()
         try:
             raw_count = conn.execute(
