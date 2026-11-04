@@ -34,7 +34,7 @@ class OpusStorageTests(unittest.TestCase):
 
         with patch.dict(os.environ, {"OPUS_INGEST_TOKEN": "server-secret"}):
             with self.assertRaises(HTTPException) as unauthorized:
-                main.add_result(main.ResultIn(period="p1", outcome="BIG"))
+                main.add_result(main.ResultIn(period="p1", outcome="BIG"), ingest_token=None)
             self.assertEqual(unauthorized.exception.status_code, 401)
             saved = main.add_result(
                 main.ResultIn(period="p2", outcome="BIG"),
