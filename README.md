@@ -11,7 +11,7 @@ Independent historical-analytics application. The project does not reuse Mark Pr
 - Optional server-side ingestion token (`OPUS_INGEST_TOKEN` / `X-OPUS-INGEST-TOKEN`) and duplicate event protection
 - Result entry and history endpoints
 - Selectable 30-second and 60-second UTC-aligned cycle timer endpoint
-- Configurable HTTPS live-provider adapter with issue/history polling, provider-specific query/auth mapping, source-tagged persistence, and duplicate event protection
+- Configurable HTTPS live-provider adapter with issue/history polling (up to 500 records for OPUS 2.2), provider-specific query/auth mapping, source-tagged persistence, and duplicate event protection
 - Live provider status and recent-result panel in the Home dashboard
 
 ## Run locally
@@ -34,7 +34,7 @@ Open http://127.0.0.1:8000 and API docs at http://127.0.0.1:8000/docs.
 - `GET /api/history`
 - `GET /api/analysis`
 - `GET /api/live/status`
-- `GET /api/live/snapshot?cycle_seconds=30` or `60`
+- `GET /api/live/snapshot?cycle_seconds=30` or `60` (optional `limit=1..500`)
 
 ## Data and limitations
 - The live adapter is implemented but no verified BDG API base URL, documented read-only routes, or credentials are configured yet. The BDG game URL is a browser route, not an API endpoint.
