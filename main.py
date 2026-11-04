@@ -97,7 +97,14 @@ nav button.active{color:var(--accent)}.hidden{display:none!important}
 <header>OPUS <span>PRO</span></header><main class="page">
 <section id="homePage"><h1>Home</h1><p class="muted">OPUS PRO research workspace.</p>
 <div class="status">Service status: <strong id="serverStatus">Connecting…</strong>
-<p class="muted">Historical analysis only. Live provider data is not connected.</p></div></section>
+<p class="muted">Historical analysis only. Live provider data is not connected.</p></div>
+<div class="panel"><h3>Cycle synchronizer</h3>
+<p class="muted">Choose the cycle length. This is a UTC-aligned timer, not a live result feed.</p>
+<div class="row"><select id="cycleLength" onchange="syncCycle()"><option value="60">1 minute</option><option value="30">30 seconds</option></select>
+<button class="action" onclick="syncCycle()">Sync cycle</button></div>
+<div class="metric"><span>Time remaining</span><b id="cycleCountdown">--:--</b></div>
+<div class="metric"><span>Cycle ID</span><b id="cycleId">Waiting</b></div>
+<p class="warning" id="cycleNote">Timer boundaries do not generate or verify external outcomes.</p></div></section>
 <section id="toolsPage" class="hidden"><h1>Tools</h1><p class="muted">Choose an OPUS analysis tool.</p>
 <div class="grid" id="toolGrid"></div>
 <div class="panel"><h3>Save a historical result</h3>
@@ -146,8 +153,26 @@ async function saveResult(){
   msg.textContent="Saved. Open a tool to refresh its analysis.";document.getElementById("period").value="";
  }catch(e){msg.textContent=e.message;}
 }
+var cycleRemaining=0,cycleTick=null,cycleSyncTimer=null;
+function paintCycle(){
+ var value=Math.max(0,cycleRemaining),mm=String(Math.floor(value/60)).padStart(2,"0"),ss=String(value%60).padStart(2,"0");
+ document.getElementById("cycleCountdown").textContent=mm+":"+ss;
+}
+async function syncCycle(){
+ var length=document.getElementById("cycleLength").value;
+ try{
+  var r=await fetch("/api/cycles/current?cycle_seconds="+length),d=await r.json();
+  if(!r.ok)throw new Error(d.detail||"Cycle sync failed");
+  cycleRemaining=d.seconds_remaining;
+  document.getElementById("cycleId").textContent=d.cycle_id;
+  document.getElementById("cycleNote").textContent=d.note;
+  paintCycle();
+ }catch(e){document.getElementById("cycleNote").textContent=e.message;}
+}
 async function checkServer(){try{var r=await fetch("/health"),d=await r.json();document.getElementById("serverStatus").textContent=d.ok?"Online":"Unavailable";}catch(e){document.getElementById("serverStatus").textContent="Unavailable";}}
-renderTools();checkServer();
+renderTools();checkServer();syncCycle();
+cycleTick=setInterval(function(){if(cycleRemaining>0)cycleRemaining--;paintCycle();},1000);
+cycleSyncTimer=setInterval(syncCycle,10000);
 </script></body></html>"""
 
 @app.get("/api/cycles/current")
