@@ -23,7 +23,7 @@ The app now includes a configurable live WinGo adapter. It reads PROVIDER_API_UR
 - `PROVIDER_ORIGIN`: optional provider-required Origin header.
 - `PROVIDER_CYCLE_PARAM`: defaults to `type`; `PROVIDER_GAME_CODE_PARAM` can be used for gameCode-style APIs.
 - `PROVIDER_GAME_CODE_30S`, `PROVIDER_GAME_CODE_60S`, `PROVIDER_LOTTERY_PARAM`, `PROVIDER_LOTTERY_VALUE`: optional provider-specific query mapping.
-- `PROVIDER_HISTORY_LIMIT_PARAM`: defaults to `size`; the connector accepts up to 500 rows to cover OPUS 2.2's lookback.
+- `PROVIDER_HISTORY_LIMIT_PARAM`: defaults to `size`; the connector accepts up to 500 rows to cover OPUS 2.2's lookback. Set `PROVIDER_HISTORY_ORDER` to `oldest_first` or `newest_first` only after confirming the provider's documented response ordering. Its default is `unknown`: raw rows are archived, but they are not inserted into chronological BIG/SMALL analysis until the order is verified.
 
 Only use read-only public result endpoints. Do not configure login, wallet, deposit, withdrawal, bet-placement, or account-control endpoints.
 
