@@ -15,6 +15,7 @@ import httpx
 
 DEFAULT_ISSUE_PATH = "/games/wingo/issue"
 DEFAULT_HISTORY_PATH = "/games/wingo/history"
+MAX_HISTORY_LIMIT = 500
 
 
 class ProviderNotConfigured(RuntimeError):
@@ -23,6 +24,11 @@ class ProviderNotConfigured(RuntimeError):
 
 class ProviderError(RuntimeError):
     pass
+
+
+def _history_limit(limit: int) -> int:
+    """Clamp provider history requests to the maximum supported OPUS window."""
+    return min(max(int(limit), 1), MAX_HISTORY_LIMIT)
 
 
 def _cycle_type(seconds: int) -> str:
@@ -137,7 +143,7 @@ async def fetch_live_snapshot(cycle_seconds: int, history_limit: int = 50) -> di
         issue_params[lottery_param] = lottery_value
         history_params[lottery_param] = lottery_value
     limit_param = os.getenv("PROVIDER_HISTORY_LIMIT_PARAM", "size").strip()
-    history_params[limit_param] = min(max(history_limit, 1), 100)
+    history_params[limit_param] = _history_limit(history_limit)
 
     timeout = httpx.Timeout(8.0, connect=4.0)
     async with httpx.AsyncClient(base_url=base_url, headers=headers, timeout=timeout,
