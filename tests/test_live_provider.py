@@ -5,11 +5,17 @@ from unittest.mock import patch
 
 from live_provider import (
     ProviderNotConfigured, ProviderError, _cycle_type,
-    normalize_history, fetch_live_snapshot,
+    normalize_history, fetch_live_snapshot, _history_limit,
 )
 
 
 class LiveProviderTests(unittest.TestCase):
+    def test_history_limit_supports_opus_500_window_and_clamps(self):
+        self.assertEqual(_history_limit(20), 20)
+        self.assertEqual(_history_limit(500), 500)
+        self.assertEqual(_history_limit(900), 500)
+        self.assertEqual(_history_limit(0), 1)
+
     def test_cycle_mapping_is_explicit(self):
         self.assertEqual(_cycle_type(30), "30s")
         self.assertEqual(_cycle_type(60), "1m")
