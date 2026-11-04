@@ -3,6 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
+from fastapi import HTTPException
 
 import main
 
@@ -12,18 +13,34 @@ class OpusStorageTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.old_path = main.DB_PATH
         main.DB_PATH = os.path.join(self.temp.name, "test.sqlite3")
-        os.environ.pop("OPUS_INGEST_TOKEN", None)
+        os.environ["OPUS_INGEST_TOKEN"] = "test-token"
 
     def tearDown(self):
         main.DB_PATH = self.old_path
         self.temp.cleanup()
 
     def test_event_id_duplicate_is_idempotent(self):
-        first = main.add_result(main.ResultIn(period="p1", outcome="BIG", event_id="event-1"))
-        second = main.add_result(main.ResultIn(period="p1", outcome="BIG", event_id="event-1"))
+        first = main.add_result(main.ResultIn(period="p1", outcome="BIG", event_id="event-1"), ingest_token="test-token")
+        second = main.add_result(main.ResultIn(period="p1", outcome="BIG", event_id="event-1"), ingest_token="test-token")
         self.assertTrue(first["saved"])
         self.assertTrue(second["duplicate"])
         self.assertEqual(first["id"], second["id"])
+
+    def test_history_write_requires_configured_server_token(self):
+        with patch.dict(os.environ, {"OPUS_INGEST_TOKEN": ""}):
+            with self.assertRaises(HTTPException) as missing:
+                main.add_result(main.ResultIn(period="p0", outcome="BIG"))
+        self.assertEqual(missing.exception.status_code, 503)
+
+        with patch.dict(os.environ, {"OPUS_INGEST_TOKEN": "server-secret"}):
+            with self.assertRaises(HTTPException) as unauthorized:
+                main.add_result(main.ResultIn(period="p1", outcome="BIG"))
+            self.assertEqual(unauthorized.exception.status_code, 401)
+            saved = main.add_result(
+                main.ResultIn(period="p2", outcome="BIG"),
+                ingest_token="server-secret",
+            )
+        self.assertTrue(saved["saved"])
 
     def test_provider_retains_raw_numeric_rows_without_guessing_size(self):
         records = [
@@ -59,7 +76,7 @@ class OpusStorageTests(unittest.TestCase):
             main.add_result(main.ResultIn(
                 period=f"p{index:03d}",
                 outcome="BIG",
-            ))
+            ), ingest_token="test-token")
         result = main.run_tool("opus-1-0")
         self.assertEqual(result["window"], 30)
         self.assertEqual(result["backtest"]["method"], "expanding_window_majority_baseline")
