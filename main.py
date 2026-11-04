@@ -28,13 +28,34 @@ def db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         period TEXT NOT NULL,
         outcome TEXT NOT NULL CHECK(outcome IN ('BIG','SMALL')),
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'manual',
+        event_id TEXT,
+        observed_at TEXT,
+        payload_hash TEXT
     )""")
+    # Forward-only migration for databases created by earlier OPUS builds.
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(results)").fetchall()}
+    migrations = {
+        "source": "ALTER TABLE results ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'",
+        "event_id": "ALTER TABLE results ADD COLUMN event_id TEXT",
+        "observed_at": "ALTER TABLE results ADD COLUMN observed_at TEXT",
+        "payload_hash": "ALTER TABLE results ADD COLUMN payload_hash TEXT",
+    }
+    for column, statement in migrations.items():
+        if column not in existing:
+            conn.execute(statement)
+    conn.execute("UPDATE results SET observed_at = created_at WHERE observed_at IS NULL")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_results_event_id ON results(event_id) WHERE event_id IS NOT NULL")
     return conn
 
 class ResultIn(BaseModel):
     period: str = Field(min_length=1, max_length=80)
     outcome: str
+    source: str = Field(default="manual", min_length=1, max_length=120)
+    event_id: str | None = Field(default=None, max_length=160)
+    observed_at: datetime | None = None
+    payload_hash: str | None = Field(default=None, max_length=128)
 
 def read_outcomes(limit=500):
     conn = db()
@@ -170,14 +191,37 @@ def add_result(item: ResultIn):
     outcome = item.outcome.strip().upper()
     if outcome not in ("BIG", "SMALL"):
         raise HTTPException(400, "outcome must be BIG or SMALL")
+    # Optional ingestion authentication: set OPUS_INGEST_TOKEN in production.
+    # If configured, write requests must carry the matching X-OPUS-INGEST-TOKEN.
+    expected_token = os.getenv("OPUS_INGEST_TOKEN")
+    if expected_token:
+        from fastapi import Header
+        # Header extraction is performed by the dedicated authenticated route below.
+        raise HTTPException(503, "Ingestion authentication is enabled; use /api/history/ingest.")
+    created_at = datetime.now(timezone.utc).isoformat()
+    observed_at = item.observed_at.astimezone(timezone.utc).isoformat() if item.observed_at else created_at
     conn = db()
     try:
-        conn.execute("INSERT INTO results(period,outcome,created_at) VALUES(?,?,?)",
-                     (item.period.strip(), outcome, datetime.now(timezone.utc).isoformat()))
+        if item.event_id:
+            existing = conn.execute(
+                "SELECT id,period,outcome FROM results WHERE event_id=?", (item.event_id,)
+            ).fetchone()
+            if existing:
+                return {"saved": False, "duplicate": True, "id": existing[0],
+                        "period": existing[1], "outcome": existing[2]}
+        cursor = conn.execute(
+            """INSERT INTO results(period,outcome,created_at,source,event_id,observed_at,payload_hash)
+               VALUES(?,?,?,?,?,?,?)""",
+            (item.period.strip(), outcome, created_at, item.source.strip(),
+             item.event_id, observed_at, item.payload_hash)
+        )
         conn.commit()
+        record_id = cursor.lastrowid
     finally:
         conn.close()
-    return {"saved": True, "period": item.period.strip(), "outcome": outcome}
+    return {"saved": True, "id": record_id, "period": item.period.strip(),
+            "outcome": outcome, "source": item.source.strip(),
+            "event_id": item.event_id, "observed_at": observed_at}
 
 @app.get("/api/history")
 def history(limit: int = 100):
