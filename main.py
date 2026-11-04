@@ -229,7 +229,7 @@ async function refreshLiveData(){
    var right=document.createElement("b");right.textContent=(item.outcome||"SIZE NOT PROVIDED")+(item.raw_result===null?"":" · "+item.raw_result);
    row.appendChild(left);row.appendChild(right);list.appendChild(row);
   });
-  note.textContent="Fetched "+d.fetched_at+" · Raw observations saved: "+d.raw_records_saved+" · Classified BIG/SMALL saved: "+d.new_records_saved+". "+d.source_note;
+  note.textContent="Fetched "+d.fetched_at+" · Raw observations saved: "+d.raw_records_saved+" · Classified BIG/SMALL saved: "+d.new_records_saved+" · History order: "+d.provider_history_order+". "+d.source_note;
  }catch(e){status.textContent="Connection error";note.textContent=e.message;}
 }
 async function checkServer(){try{var r=await fetch("/health"),d=await r.json();document.getElementById("serverStatus").textContent=d.ok?"Online":"Unavailable";}catch(e){document.getElementById("serverStatus").textContent="Unavailable";}}
@@ -263,13 +263,20 @@ def status():
     return {"server": "online", "provider": "not_configured", "live_data": False,
             "message": "No verified provider API is connected. Only user-entered historical results are analyzed."}
 
-def _persist_provider_history(records: list[dict], cycle_type: str) -> dict:
-    """Persist every raw provider row; classify only explicit BIG/SMALL values."""
+def _persist_provider_history(
+    records: list[dict], cycle_type: str, history_order: str | None = None
+) -> dict:
+    """Archive every raw row; only analyze outcomes with a verified time order."""
+    order = (history_order or os.getenv("PROVIDER_HISTORY_ORDER", "unknown")).strip().lower()
+    if order not in ("oldest_first", "newest_first", "unknown"):
+        raise ValueError("PROVIDER_HISTORY_ORDER must be oldest_first, newest_first, or unknown")
+
     conn = db()
     raw_inserted = 0
     classified_inserted = 0
     fetched_at = datetime.now(timezone.utc).isoformat()
     try:
+        valid_rows = []
         for row in records:
             period_value = row.get("period")
             if period_value is None:
@@ -294,30 +301,33 @@ def _persist_provider_history(records: list[dict], cycle_type: str) -> dict:
                  row.get("payload_hash"), payload_json, fetched_at, event_id)
             )
             raw_inserted += max(cursor.rowcount, 0)
+            if row.get("outcome") in ("BIG", "SMALL"):
+                valid_rows.append((row, period, event_id, observed_at))
 
-            # Retain unclassified numeric outcomes as raw observations. Only
-            # explicit BIG/SMALL values enter the analytical result table.
-            if row.get("outcome") not in ("BIG", "SMALL"):
-                continue
-            result_observed_at = observed_at or fetched_at
-            try:
-                conn.execute(
-                    """INSERT INTO results(period,outcome,created_at,source,event_id,observed_at,payload_hash)
-                       VALUES(?,?,?,?,?,?,?)""",
-                    (period, row["outcome"], fetched_at,
-                     f"provider:wingo:{cycle_type}", event_id, result_observed_at,
-                     row.get("payload_hash"))
-                )
-                classified_inserted += 1
-            except sqlite3.IntegrityError:
-                # Same provider event already stored; do not create duplicates.
-                continue
+        # Without provider-documented row order, do not write to chronological
+        # analysis history. Raw evidence remains archived for later review.
+        if order != "unknown":
+            ordered_rows = list(reversed(valid_rows)) if order == "newest_first" else valid_rows
+            for row, period, event_id, observed_at in ordered_rows:
+                try:
+                    conn.execute(
+                        """INSERT INTO results(period,outcome,created_at,source,event_id,observed_at,payload_hash)
+                           VALUES(?,?,?,?,?,?,?)""",
+                        (period, row["outcome"], fetched_at,
+                         f"provider:wingo:{cycle_type}", event_id, observed_at or fetched_at,
+                         row.get("payload_hash"))
+                    )
+                    classified_inserted += 1
+                except sqlite3.IntegrityError:
+                    continue
         conn.commit()
     finally:
         conn.close()
     return {
         "raw_observations_saved": raw_inserted,
         "classified_results_saved": classified_inserted,
+        "history_order": order,
+        "analysis_ingest_enabled": order != "unknown",
     }
 
 
@@ -351,6 +361,10 @@ async def live_snapshot(cycle_seconds: int = 60, limit: int = 50):
     snapshot["status"] = "connected"
     snapshot["raw_records_saved"] = inserted["raw_observations_saved"]
     snapshot["new_records_saved"] = inserted["classified_results_saved"]
+    snapshot["provider_history_order"] = inserted["history_order"]
+    snapshot["analysis_ingest_enabled"] = inserted["analysis_ingest_enabled"]
+    if not inserted["analysis_ingest_enabled"]:
+        snapshot["source_note"] += " Raw history is archived, but chronological analysis ingestion is paused until PROVIDER_HISTORY_ORDER is verified."
     return snapshot
 
 
