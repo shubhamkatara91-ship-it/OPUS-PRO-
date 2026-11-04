@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import os
+import time
 import sqlite3
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -126,6 +127,21 @@ async function saveResult(){
 async function checkServer(){try{var r=await fetch("/health"),d=await r.json();document.getElementById("serverStatus").textContent=d.ok?"Online":"Unavailable";}catch(e){document.getElementById("serverStatus").textContent="Unavailable";}}
 renderTools();checkServer();
 </script></body></html>"""
+
+@app.get("/api/cycles/current")
+def current_cycle(cycle_seconds: int = 60):
+    """Return a 30s or 60s UTC-aligned timer window; not a result feed."""
+    if cycle_seconds not in (30, 60):
+        raise HTTPException(422, "cycle_seconds must be 30 or 60")
+    epoch = int(time.time())
+    start = epoch - (epoch % cycle_seconds)
+    return {
+        "cycle_seconds": cycle_seconds,
+        "cycle_id": f"{cycle_seconds}-{start}",
+        "cycle_started_at": datetime.fromtimestamp(start, timezone.utc).isoformat(),
+        "seconds_remaining": cycle_seconds - (epoch % cycle_seconds),
+        "note": "Timer boundary only; it does not verify or generate an external result."
+    }
 
 @app.get("/health")
 def health():
