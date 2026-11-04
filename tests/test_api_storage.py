@@ -56,6 +56,18 @@ class OpusStorageTests(unittest.TestCase):
         self.assertEqual(unclassified[1], "2")
         self.assertEqual(analysis_count, 1)
 
+    def test_opus_tool_includes_walk_forward_baseline(self):
+        for index in range(25):
+            main.add_result(main.ResultIn(
+                period=f"p{index:03d}",
+                outcome="BIG",
+            ))
+        result = main.run_tool("opus-1-0")
+        self.assertEqual(result["window"], 30)
+        self.assertEqual(result["backtest"]["method"], "expanding_window_majority_baseline")
+        self.assertEqual(result["backtest"]["evaluated"], 5)
+        self.assertEqual(result["backtest"]["accuracy_pct"], 100.0)
+
     def test_cycle_lengths(self):
         for seconds in (30, 60):
             result = main.current_cycle(seconds)
