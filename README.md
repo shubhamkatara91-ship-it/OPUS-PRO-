@@ -8,6 +8,7 @@ Independent historical-analytics application. The project does not reuse Mark Pr
 - Profile-specific historical lookback windows: 20, 30, 50, 75, 100, 150, 200, and 500 records
 - Original statistical engine: observed frequency, recency-weighted frequency, transition counts with Laplace smoothing, streaks, entropy, and a walk-forward majority baseline
 - Historical result ingestion with source, event ID, observed timestamp, and payload-hash provenance
+- Separate de-duplicated archive of raw provider observations, including numeric draws that are not yet mapped to BIG/SMALL
 - Optional server-side ingestion token (`OPUS_INGEST_TOKEN` / `X-OPUS-INGEST-TOKEN`) and duplicate event protection
 - Result entry and history endpoints
 - Selectable 30-second and 60-second UTC-aligned cycle timer endpoint
@@ -35,6 +36,7 @@ Open http://127.0.0.1:8000 and API docs at http://127.0.0.1:8000/docs.
 - `GET /api/analysis`
 - `GET /api/live/status`
 - `GET /api/live/snapshot?cycle_seconds=30` or `60` (optional `limit=1..500`)
+- `GET /api/live/history?cycle_seconds=30` or `60` (optional `limit=1..500`)
 
 ## Data and limitations
 - The live adapter is implemented but no verified BDG API base URL, documented read-only routes, or credentials are configured yet. The BDG game URL is a browser route, not an API endpoint.
