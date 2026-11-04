@@ -140,6 +140,9 @@ async function runTool(id){
   "<div class='metric'><span>Last observed</span><b>"+(a.last_observed||"—")+"</b></div>"+
   "<div class='metric'><span>Current streak</span><b>"+(a.current_streak.outcome||"—")+" × "+a.current_streak.length+"</b></div>"+
   "<div class='metric'><span>Transition after last</span><b>"+transition+"</b></div>"+
+  "<div class='metric'><span>Historical research lean</span><b>"+(a.historical_bias||"Not enough data")+"</b></div>"+
+  "<div class='metric'><span>Indicator agreement</span><b>"+(a.model_agreement_score===null?"—":a.model_agreement_score+"%")+"</b></div>"+
+  "<div class='metric'><span>Binary entropy</span><b>"+a.binary_entropy+"</b></div>"+
   "<div class='metric'><span>Research status</span><b>"+a.status+"</b></div>"+
   "<p class='warning'>"+a.limitations.join(" ")+"</p><p class='warning'>Historical statistics are not a guaranteed next-result prediction.</p>";
  }catch(e){box.textContent=e.message;}
