@@ -41,11 +41,11 @@ def modules() -> dict[str, object]:
 
 
 @app.get("/api/v1/cycles/current")
-def current_cycle() -> dict[str, object]:
+def current_cycle(cycle_seconds: int = 60) -> dict[str, object]:
     now = time.time()
-    seconds = int(os.getenv("OPUS_CYCLE_SECONDS", "60"))
+    seconds = cycle_seconds
     if seconds not in (30, 60):
-        raise HTTPException(status_code=500, detail="OPUS_CYCLE_SECONDS must be 30 or 60.")
+        raise HTTPException(status_code=422, detail="cycle_seconds must be 30 or 60.")
     epoch = int(now)
     cycle_start = epoch - (epoch % seconds)
     remaining = seconds - (epoch % seconds)
