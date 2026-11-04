@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Header
 import hmac
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
-from signal_engine import analyze as analyze_history
+from signal_engine import analyze as analyze_history, walk_forward_backtest
 from live_provider import fetch_live_snapshot, ProviderNotConfigured, ProviderError
 
 APP_NAME = "OPUS PRO"
@@ -151,7 +151,7 @@ async function runTool(id){
  var box=document.getElementById("result");box.classList.remove("hidden");box.textContent="Loading historical analysis…";
  try{
   var r=await fetch("/api/tools/"+id),d=await r.json();if(!r.ok)throw new Error(d.detail||"Unable to load tool");
-  var a=d.analysis,f=a.observed_frequency_pct,w=a.recency_weighted_frequency_pct,t=a.smoothed_transition_pct_after_last;
+  var a=d.analysis,b=d.backtest,f=a.observed_frequency_pct,w=a.recency_weighted_frequency_pct,t=a.smoothed_transition_pct_after_last;
   var transition=t?("BIG "+t.BIG+"% / SMALL "+t.SMALL+"%"):"Not enough data";
   box.innerHTML="<h3>"+d.name+"</h3><p class='muted'>"+d.window+" result lookback · "+a.sample_size+" records found</p>"+
   "<div class='metric'><span>Observed BIG / SMALL</span><b>"+f.BIG+"% / "+f.SMALL+"%</b></div>"+
@@ -161,6 +161,7 @@ async function runTool(id){
   "<div class='metric'><span>Transition after last</span><b>"+transition+"</b></div>"+
   "<div class='metric'><span>Historical research lean</span><b>"+(a.historical_bias||"Not enough data")+"</b></div>"+
   "<div class='metric'><span>Indicator agreement</span><b>"+(a.model_agreement_score===null?"—":a.model_agreement_score+"%")+"</b></div>"+
+  "<div class='metric'><span>Walk-forward baseline</span><b>"+(b.accuracy_pct===null?"Not enough tests":b.accuracy_pct+"% · "+b.evaluated+" tests")+"</b></div>"+
   "<div class='metric'><span>Binary entropy</span><b>"+a.binary_entropy+"</b></div>"+
   "<div class='metric'><span>Research status</span><b>"+a.status+"</b></div>"+
   "<p class='warning'>"+a.limitations.join(" ")+"</p><p class='warning'>Historical statistics are not a guaranteed next-result prediction.</p>";
@@ -388,8 +389,16 @@ def run_tool(tool_id: str):
     if profile is None:
         raise HTTPException(404, "Unknown OPUS tool")
     rows = read_outcomes(profile["window"])
-    result = analyze_history([row[1] for row in rows], min_samples=20)
-    return {"id": profile["id"], "name": profile["name"], "window": profile["window"], "analysis": result}
+    outcomes = [row[1] for row in rows]
+    result = analyze_history(outcomes, min_samples=20)
+    backtest = walk_forward_backtest(outcomes, min_train=20)
+    return {
+        "id": profile["id"],
+        "name": profile["name"],
+        "window": profile["window"],
+        "analysis": result,
+        "backtest": backtest,
+    }
 
 @app.post("/api/history")
 def add_result(item: ResultIn, ingest_token: str | None = Header(default=None, alias="X-OPUS-INGEST-TOKEN")):
