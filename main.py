@@ -110,7 +110,8 @@ nav button.active{color:var(--accent)}.hidden{display:none!important}
 <div class="panel"><h3>Save a historical result</h3>
 <p class="muted">Enter a period and its observed BIG or SMALL result. This saves history; it does not fetch live results.</p>
 <div class="row"><input id="period" placeholder="Period ID"><select id="outcome"><option>BIG</option><option>SMALL</option></select><button class="action" onclick="saveResult()">Save</button></div><p id="saveMessage" class="muted"></p></div>
-<div id="result" class="panel hidden" aria-live="polite"></div></section></main>
+<div id="result" class="panel hidden" aria-live="polite"></div>
+<div class="panel"><div class="row" style="justify-content:space-between;align-items:center"><h3>Recent history</h3><button class="action" onclick="loadHistory()">Refresh</button></div><div id="historyList" class="muted">Loading history…</div></div></section></main>
 <nav><button id="homeTab" class="active" onclick="showPage('home')">Home</button><button id="toolsTab" onclick="showPage('tools')">Tools</button></nav>
 <script>
 var profiles=[
@@ -121,6 +122,7 @@ function showPage(page){
  document.getElementById("toolsPage").classList.toggle("hidden",page!=="tools");
  document.getElementById("homeTab").classList.toggle("active",page==="home");
  document.getElementById("toolsTab").classList.toggle("active",page==="tools");
+ if(page==="tools")loadHistory();
 }
 function renderTools(){
  var html="";
@@ -147,6 +149,20 @@ async function runTool(id){
   "<p class='warning'>"+a.limitations.join(" ")+"</p><p class='warning'>Historical statistics are not a guaranteed next-result prediction.</p>";
  }catch(e){box.textContent=e.message;}
 }
+async function loadHistory(){
+ var box=document.getElementById("historyList");box.textContent="Loading history…";
+ try{
+  var r=await fetch("/api/history?limit=20"),d=await r.json();if(!r.ok)throw new Error(d.detail||"Unable to load history");
+  box.replaceChildren();
+  if(!d.items.length){box.textContent="No historical records saved yet.";return;}
+  d.items.forEach(function(item){
+   var row=document.createElement("div");row.className="metric";
+   var left=document.createElement("span");left.textContent=item.period+" · "+item.source;
+   var right=document.createElement("b");right.textContent=item.outcome;
+   row.appendChild(left);row.appendChild(right);box.appendChild(row);
+  });
+ }catch(e){box.textContent=e.message;}
+}
 async function saveResult(){
  var period=document.getElementById("period").value.trim(),outcome=document.getElementById("outcome").value,msg=document.getElementById("saveMessage");
  if(!period){msg.textContent="Enter a period ID first.";return;}
@@ -154,6 +170,7 @@ async function saveResult(){
   var r=await fetch("/api/history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({period:period,outcome:outcome})});
   var d=await r.json();if(!r.ok)throw new Error(d.detail||"Save failed");
   msg.textContent="Saved. Open a tool to refresh its analysis.";document.getElementById("period").value="";
+  loadHistory();
  }catch(e){msg.textContent=e.message;}
 }
 var cycleRemaining=0,cycleTick=null,cycleSyncTimer=null;
