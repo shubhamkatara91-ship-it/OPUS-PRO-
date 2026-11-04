@@ -124,9 +124,6 @@ nav button.active{color:var(--accent)}.hidden{display:none!important}
 <p class="warning" id="cycleNote">Timer boundaries do not generate or verify external outcomes.</p></div></section>
 <section id="toolsPage" class="hidden"><h1>Tools</h1><p class="muted">Choose an OPUS analysis tool.</p>
 <div class="grid" id="toolGrid"></div>
-<div class="panel"><h3>Save a historical result</h3>
-<p class="muted">Enter a period and its observed BIG or SMALL result. This saves history; it does not fetch live results.</p>
-<div class="row"><input id="period" placeholder="Period ID"><select id="outcome"><option>BIG</option><option>SMALL</option></select><button class="action" onclick="saveResult()">Save</button></div><p id="saveMessage" class="muted"></p></div>
 <div id="result" class="panel hidden" aria-live="polite"></div>
 <div class="panel"><div class="row" style="justify-content:space-between;align-items:center"><h3>Recent history</h3><button class="action" onclick="loadHistory()">Refresh</button></div><div id="historyList" class="muted">Loading history…</div></div></section></main>
 <nav><button id="homeTab" class="active" onclick="showPage('home')">Home</button><button id="toolsTab" onclick="showPage('tools')">Tools</button></nav>
@@ -181,16 +178,7 @@ async function loadHistory(){
   });
  }catch(e){box.textContent=e.message;}
 }
-async function saveResult(){
- var period=document.getElementById("period").value.trim(),outcome=document.getElementById("outcome").value,msg=document.getElementById("saveMessage");
- if(!period){msg.textContent="Enter a period ID first.";return;}
- try{
-  var r=await fetch("/api/history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({period:period,outcome:outcome})});
-  var d=await r.json();if(!r.ok)throw new Error(d.detail||"Save failed");
-  msg.textContent="Saved. Open a tool to refresh its analysis.";document.getElementById("period").value="";
-  loadHistory();
- }catch(e){msg.textContent=e.message;}
-}
+
 var cycleRemaining=0,cycleTick=null,cycleSyncTimer=null;
 function paintCycle(){
  var value=Math.max(0,cycleRemaining),mm=String(Math.floor(value/60)).padStart(2,"0"),ss=String(value%60).padStart(2,"0");
@@ -422,7 +410,9 @@ def add_result(item: ResultIn, ingest_token: str | None = Header(default=None, a
     # Configure OPUS_INGEST_TOKEN on the server before exposing write access.
     # The token is never shipped to the browser or Android client.
     expected_token = os.getenv("OPUS_INGEST_TOKEN")
-    if expected_token and not hmac.compare_digest(ingest_token or "", expected_token):
+    if not expected_token:
+        raise HTTPException(503, "Trusted historical ingestion is disabled until OPUS_INGEST_TOKEN is configured.")
+    if not hmac.compare_digest(ingest_token or "", expected_token):
         raise HTTPException(401, "A valid X-OPUS-INGEST-TOKEN is required.")
     created_at = datetime.now(timezone.utc).isoformat()
     observed_at = item.observed_at.astimezone(timezone.utc).isoformat() if item.observed_at else created_at
