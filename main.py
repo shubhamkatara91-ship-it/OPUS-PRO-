@@ -228,7 +228,7 @@ async function refreshLiveData(){
    var right=document.createElement("b");right.textContent=(item.outcome||"SIZE NOT PROVIDED")+(item.raw_result===null?"":" · "+item.raw_result);
    row.appendChild(left);row.appendChild(right);list.appendChild(row);
   });
-  note.textContent="Fetched "+d.fetched_at+" · New records saved: "+d.new_records_saved+". "+d.source_note;
+  note.textContent="Fetched "+d.fetched_at+" · Raw observations saved: "+d.raw_records_saved+" · Classified BIG/SMALL saved: "+d.new_records_saved+". "+d.source_note;
  }catch(e){status.textContent="Connection error";note.textContent=e.message;}
 }
 async function checkServer(){try{var r=await fetch("/health"),d=await r.json();document.getElementById("serverStatus").textContent=d.ok?"Online":"Unavailable";}catch(e){document.getElementById("serverStatus").textContent="Unavailable";}}
