@@ -1,4 +1,5 @@
 name: OPUS PRO backend checks
+# Verify the current main branch, including provenance and cycle tests.
 
 on:
   push:
