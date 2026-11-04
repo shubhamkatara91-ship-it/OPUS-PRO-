@@ -6,7 +6,7 @@ Independent historical-analytics application. The project does not reuse Mark Pr
 - Home and Tools dashboard
 - Eight OPUS profiles: 1.1, 1.0, 1.2, 1.4, 1.8, 1.6, 2.0, 2.2
 - Profile-specific historical lookback windows: 20, 30, 50, 75, 100, 150, 200, and 500 records
-- Original statistical engine: observed frequency, recency-weighted frequency, transition counts with Laplace smoothing, streaks, entropy, and a walk-forward majority baseline
+- Original statistical engine: observed frequency, recency-weighted frequency, transition counts with Laplace smoothing, streaks, entropy, and per-tool expanding-window walk-forward baseline results
 - Historical result ingestion with source, event ID, observed timestamp, and payload-hash provenance
 - Separate de-duplicated archive of raw provider observations, including numeric draws that are not yet mapped to BIG/SMALL
 - Optional server-side ingestion token (`OPUS_INGEST_TOKEN` / `X-OPUS-INGEST-TOKEN`) and duplicate event protection
