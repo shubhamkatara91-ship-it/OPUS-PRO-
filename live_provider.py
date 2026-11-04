@@ -116,15 +116,37 @@ async def fetch_live_snapshot(cycle_seconds: int, history_limit: int = 50) -> di
         headers["Origin"] = origin
     api_token = os.getenv("PROVIDER_API_TOKEN", "").strip()
     if api_token:
-        headers["Authorization"] = f"Bearer {api_token}"
+        auth_header = os.getenv("PROVIDER_AUTH_HEADER", "Authorization").strip()
+        auth_scheme = os.getenv("PROVIDER_AUTH_SCHEME", "Bearer").strip()
+        headers[auth_header] = f"{auth_scheme} {api_token}".strip()
+
+    cycle_param = os.getenv("PROVIDER_CYCLE_PARAM", "type").strip()
+    issue_params = {cycle_param: cycle_type}
+    history_params = {cycle_param: cycle_type}
+    game_code_param = os.getenv("PROVIDER_GAME_CODE_PARAM", "").strip()
+    if game_code_param:
+        game_code = os.getenv(
+            "PROVIDER_GAME_CODE_30S" if cycle_seconds == 30 else "PROVIDER_GAME_CODE_60S", ""
+        ).strip()
+        if game_code:
+            issue_params[game_code_param] = game_code
+            history_params[game_code_param] = game_code
+    lottery_param = os.getenv("PROVIDER_LOTTERY_PARAM", "").strip()
+    lottery_value = os.getenv("PROVIDER_LOTTERY_VALUE", "").strip()
+    if lottery_param and lottery_value:
+        issue_params[lottery_param] = lottery_value
+        history_params[lottery_param] = lottery_value
+    limit_param = os.getenv("PROVIDER_HISTORY_LIMIT_PARAM", "size").strip()
+    history_params[limit_param] = min(max(history_limit, 1), 100)
 
     timeout = httpx.Timeout(8.0, connect=4.0)
     async with httpx.AsyncClient(base_url=base_url, headers=headers, timeout=timeout,
                                  follow_redirects=False) as client:
         try:
-            issue_response, history_response = await __import__("asyncio").gather(
-                client.get(issue_path, params={"type": cycle_type}),
-                client.get(history_path, params={"type": cycle_type, "size": min(max(history_limit, 1), 100)}),
+            import asyncio
+            issue_response, history_response = await asyncio.gather(
+                client.get(issue_path, params=issue_params),
+                client.get(history_path, params=history_params),
             )
             issue_response.raise_for_status()
             history_response.raise_for_status()
