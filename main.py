@@ -197,7 +197,7 @@ async function refreshLiveData(){
  var countdown=document.getElementById("liveCountdown"),last=document.getElementById("liveLastResult");
  var list=document.getElementById("liveHistory"),note=document.getElementById("liveNote");
  try{
-  var r=await fetch("/api/live/snapshot?cycle_seconds="+cycle+"&limit=20"),d=await r.json();
+  var r=await fetch("/api/live/snapshot?cycle_seconds="+cycle+"&limit=500"),d=await r.json();
   if(d.status==="not_configured"){status.textContent="Not configured";issue.textContent="—";countdown.textContent="—";last.textContent="—";list.textContent="No live provider data available.";note.textContent=d.message;return;}
   if(!d.connected){status.textContent="Connection error";issue.textContent="—";countdown.textContent="—";last.textContent="—";list.textContent="Live history unavailable.";note.textContent=d.message;return;}
   status.textContent="Connected · "+d.provider_host;
