@@ -1,4 +1,5 @@
 name: Build OPUS PRO Android APK
+# Build the current Android client and upload the debug install package.
 on:
   workflow_dispatch:
   push:
