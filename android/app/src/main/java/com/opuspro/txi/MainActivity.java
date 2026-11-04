@@ -24,6 +24,7 @@ import android.text.InputType;
 public class MainActivity extends Activity {
     private static final String PREFS = "opus_pro_settings";
     private static final String KEY_URL = "backend_url";
+    private static final String DEFAULT_URL = "https://opus-pro-api.onrender.com";
     private static final int BG = Color.rgb(16, 27, 36);
     private WebView webView;
     private ProgressBar progress;
@@ -92,8 +93,9 @@ public class MainActivity extends Activity {
         root.addView(errorView, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(root);
 
-        String saved = prefs.getString(KEY_URL, "");
-        if (saved.isEmpty()) showServerDialog(true); else loadApp(saved);
+        String saved = prefs.getString(KEY_URL, DEFAULT_URL);
+        if (saved.isEmpty()) saved = DEFAULT_URL;
+        loadApp(saved);
     }
 
     private int dp(int value) { return (int)(value * getResources().getDisplayMetrics().density); }
