@@ -191,7 +191,7 @@ async function syncCycle(){
 }
 async function checkServer(){try{var r=await fetch("/health"),d=await r.json();document.getElementById("serverStatus").textContent=d.ok?"Online":"Unavailable";}catch(e){document.getElementById("serverStatus").textContent="Unavailable";}}
 renderTools();checkServer();syncCycle();
-cycleTick=setInterval(function(){if(cycleRemaining>0)cycleRemaining--;paintCycle();},1000);
+cycleTick=setInterval(function(){if(cycleRemaining>0)cycleRemaining--;paintCycle();if(cycleRemaining===0)syncCycle();},1000);
 cycleSyncTimer=setInterval(syncCycle,10000);
 </script></body></html>"""
 
